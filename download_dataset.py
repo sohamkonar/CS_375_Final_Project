@@ -3,6 +3,7 @@ import requests
 import zipfile
 import hashlib
 import logging
+import tarfile
 from typing import List, Optional, Dict
 from tqdm import tqdm
 
@@ -20,6 +21,10 @@ logger = logging.getLogger("bold5000_downloader")
 # --- Configuration ---
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "BOLD5000_data")
 FIGSHARE_BASE_URL = "https://figshare.com/ndownloader/files/"
+
+# Alternative direct download URL for the complete dataset
+DIRECT_DOWNLOAD_URL = "https://figshare.com/ndownloader/articles/14456124?private_link=bbaf45dca1b1b873ddfa"
+DATASET_ARCHIVE = f"{OUTPUT_DIR}/BOLD5000_complete.tar.gz"
 
 # Full file IDs from Figshare (BOLD5000 v2.0)
 # These are the file IDs for all sessions of all subjects
@@ -139,9 +144,88 @@ def download_file(url: str, destination: str, expected_checksum: Optional[str] =
             os.remove(destination)
         return False
 
+def setup_bold5000_direct_download(selected_subjects: Optional[List[str]] = None,
+                                  selected_sessions: Optional[List[str]] = None,
+                                  force_download: bool = False) -> bool:
+    """
+    Download and setup the BOLD5000 dataset using direct download link
+    
+    Args:
+        selected_subjects: List of subjects to filter after extraction (default: all)
+        selected_sessions: List of sessions to filter after extraction (default: all)
+        force_download: If True, re-download files even if they exist
+        
+    Returns:
+        bool: True if setup was successful
+    """
+    # Setup directories
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    
+    # Download the complete dataset
+    if force_download or not os.path.exists(DATASET_ARCHIVE):
+        logger.info("Downloading complete BOLD5000 dataset (121 GB)...")
+        logger.info("This will take a significant amount of time depending on your connection speed.")
+        
+        if not download_file(DIRECT_DOWNLOAD_URL, DATASET_ARCHIVE):
+            logger.error("Failed to download dataset. Aborting setup.")
+            return False
+    
+    # Extract the dataset
+    if not os.path.exists(f"{OUTPUT_DIR}/GLMbetas"):
+        logger.info("Extracting dataset files (this may take a while)...")
+        try:
+            # Check if it's a tar.gz file
+            if tarfile.is_tarfile(DATASET_ARCHIVE):
+                with tarfile.open(DATASET_ARCHIVE, 'r') as tar:
+                    # Extract all or filtered members
+                    members = tar.getmembers()
+                    
+                    # Filter members if subjects/sessions are specified
+                    if selected_subjects or selected_sessions:
+                        filtered_members = []
+                        for member in members:
+                            # Check if this member matches the requested subjects/sessions
+                            should_extract = True
+                            
+                            if selected_subjects:
+                                if not any(subj in member.name for subj in selected_subjects):
+                                    should_extract = False
+                            
+                            if selected_sessions and should_extract:
+                                if not any(sess in member.name for sess in selected_sessions):
+                                    should_extract = False
+                            
+                            # Always extract metadata and stimuli
+                            if "metadata" in member.name or "stimuli" in member.name:
+                                should_extract = True
+                                
+                            if should_extract:
+                                filtered_members.append(member)
+                                
+                        members = filtered_members
+                    
+                    # Extract the selected members with progress
+                    for member in tqdm(members, desc="Extracting files"):
+                        tar.extract(member, path=OUTPUT_DIR)
+            # Try zip file if not tar
+            elif zipfile.is_zipfile(DATASET_ARCHIVE):
+                with zipfile.ZipFile(DATASET_ARCHIVE, 'r') as zip_ref:
+                    # Similar filtering logic could be applied here
+                    zip_ref.extractall(OUTPUT_DIR)
+            else:
+                logger.error(f"Unknown archive format for {DATASET_ARCHIVE}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to extract dataset: {str(e)}")
+            return False
+    
+    return True
+
 def setup_bold5000(selected_subjects: Optional[List[str]] = None, 
                   selected_sessions: Optional[List[str]] = None,
-                  force_download: bool = False) -> bool:
+                  force_download: bool = False,
+                  use_direct_download: bool = True) -> bool:
     """
     Download and setup the BOLD5000 dataset
     
@@ -149,10 +233,40 @@ def setup_bold5000(selected_subjects: Optional[List[str]] = None,
         selected_subjects: List of subjects to download (default: all)
         selected_sessions: List of sessions to download (default: all)
         force_download: If True, re-download files even if they exist
+        use_direct_download: If True, use the direct download link instead of individual files
         
     Returns:
         bool: True if setup was successful
     """
+    # Try direct download first if enabled
+    if use_direct_download:
+        logger.info("Using direct download method for complete dataset")
+        if setup_bold5000_direct_download(selected_subjects, selected_sessions, force_download):
+            # Download stimulus images if not included in the main archive
+            stimuli_dir = f"{OUTPUT_DIR}/stimuli/Scene_Stimuli"
+            if not os.path.exists(stimuli_dir):
+                img_archive = f"{OUTPUT_DIR}/Scene_Stimuli.zip"
+                if force_download or not os.path.exists(img_archive):
+                    logger.info("Downloading stimulus images...")
+                    if not download_file(IMAGE_URL, img_archive):
+                        logger.error("Failed to download stimulus images")
+                        return False
+                    
+                # Extract stimulus images
+                logger.info("Extracting image files...")
+                try:
+                    with zipfile.ZipFile(img_archive, 'r') as zip_ref:
+                        zip_ref.extractall(f"{OUTPUT_DIR}/stimuli")
+                except zipfile.BadZipFile:
+                    logger.error(f"Failed to extract {img_archive}. File may be corrupted.")
+                    return False
+            
+            logger.info("Setup complete!")
+            return True
+        else:
+            logger.warning("Direct download failed, falling back to individual file download method")
+    
+    # Fallback to original method
     # Setup directories
     os.makedirs(f"{OUTPUT_DIR}/GLMbetas", exist_ok=True)
     os.makedirs(f"{OUTPUT_DIR}/stimuli", exist_ok=True)
@@ -243,11 +357,14 @@ if __name__ == "__main__":
     parser.add_argument('--subjects', nargs='+', help='List of subjects to download')
     parser.add_argument('--sessions', nargs='+', help='List of sessions to download')
     parser.add_argument('--force', action='store_true', help='Force re-download of existing files')
+    parser.add_argument('--direct', action='store_true', default=True, 
+                       help='Use direct download method (default: True)')
     
     args = parser.parse_args()
     
     setup_bold5000(
         selected_subjects=args.subjects,
         selected_sessions=args.sessions,
-        force_download=args.force
+        force_download=args.force,
+        use_direct_download=args.direct
     )
