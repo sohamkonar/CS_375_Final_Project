@@ -1,0 +1,33 @@
+# BOLD5000 dataset files
+BOLD5000_data/
+/BOLD5000_data/
+Scene_Stimuli.zip
+
+# Specific dataset components
+**/GLMbetas/
+**/stimuli/
+**/trials_metadata.csv
+
+# Model files
+*.pt
+best_fmri2image_model.pt
+last_fmri2image_model.pt
+
+# Results and visualizations
+training_loss.png
+reconstruction_results.png
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# Virtual environments
+venv/
+env/
+.env/
+
+# OS specific files
+.DS_Store
+Thumbs.db
