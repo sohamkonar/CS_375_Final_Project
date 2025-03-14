@@ -51,6 +51,139 @@ python main.py
 
 **Note**: The full dataset is approximately 200 GB and requires significant time to download and process.
 
+### Downloading the Dataset
+
+#### Download the Complete Dataset
+
+To download the entire BOLD5000 dataset (approximately 200 GB):
+
+```
+python download_dataset.py
+```
+
+This will:
+1. Create a `data/` directory in the project folder
+2. Download all subject data from the BOLD5000 repository
+3. Extract and organize files by subject and session
+4. Verify the integrity of downloaded files
+
+#### Download a Subset of the Dataset
+
+To download data for specific subjects only:
+
+```
+python download_dataset.py --subjects CSI1 CSI3
+```
+
+To download specific sessions for selected subjects:
+
+```
+python download_dataset.py --subjects CSI1 CSI3 --sessions ses01 ses03 ses05
+```
+
+To download a limited number of samples (useful for testing):
+
+```
+python download_dataset.py --subset_size 500
+```
+
+This will download only the first 500 samples across the specified subjects/sessions.
+
+### Running Experiments
+
+#### Full Experiment
+
+To run a complete training and evaluation experiment using all available data:
+
+```
+python main.py
+```
+
+This will:
+1. Check if the dataset exists (downloading if necessary)
+2. Preprocess the fMRI data
+3. Train the reconstruction model
+4. Evaluate performance and generate visualizations
+5. Save the trained model and results
+
+#### Quick Test Experiment
+
+For a quick test to verify your setup:
+
+```
+python main.py --subjects CSI1 --sessions ses01 --subset_size 100 --epochs 5
+```
+
+This runs a small experiment using only 100 samples from subject CSI1's first session with just 5 training epochs.
+
+#### Cross-Subject Experiment
+
+To train on some subjects and test on others:
+
+```
+python main.py --train_subjects CSI1 CSI2 --test_subjects CSI3 --epochs 30
+```
+
+#### Hyperparameter Tuning Example
+
+To experiment with different model configurations:
+
+```
+python main.py --subjects CSI1 CSI2 --latent_dim 512 --batch_size 32 --lr 5e-5
+```
+
+#### Evaluation Only
+
+To evaluate a previously trained model without retraining:
+
+```
+python main.py --eval_only --model_path ./models/my_trained_model.pth
+```
+
+### Advanced Usage Examples
+
+#### Memory-Efficient Processing
+
+For machines with limited RAM:
+
+```
+python main.py --memory_mapping --batch_size 8 --num_workers 2
+```
+
+#### High-Performance Setup
+
+For machines with powerful GPUs and plenty of RAM:
+
+```
+python main.py --batch_size 64 --num_workers 8
+```
+
+#### Resuming Training
+
+To continue training from a checkpoint:
+
+```
+python main.py --resume --checkpoint_path ./checkpoints/checkpoint_epoch20.pth
+```
+
+#### Custom Data Split
+
+To specify a custom train/validation/test split:
+
+```
+python main.py --train_split 0.7 --val_split 0.15 --test_split 0.15
+```
+
+### Visualizing Results
+
+To generate visualizations of reconstructed images:
+
+```
+python visualize.py --model_path ./models/trained_model.pth --num_samples 20
+```
+
+This will create a grid of original vs. reconstructed images for the specified number of test samples.
+
 ### Command Line Arguments
 
 - `--download`: Force download of the dataset even if files exist
@@ -67,23 +200,6 @@ python main.py
 - `--lr`: Learning rate (default: 1e-4)
 - `--cpu`: Force CPU usage even if GPU is available
 - `--num_workers`: Number of data loading workers (default: 4)
-
-### Examples
-
-Train using only subject CSI1, all sessions:
-```
-python main.py --subjects CSI1
-```
-
-Use a specific subset of sessions:
-```
-python main.py --subjects CSI1 CSI2 --sessions ses01 ses02 ses03
-```
-
-Use a smaller subset of the data for faster experimentation:
-```
-python main.py --subset_size 1000
-```
 
 ## Hardware Requirements
 
@@ -110,21 +226,49 @@ For large datasets, this implementation includes:
 - Automatic batch size adjustment for GPU memory constraints
 - Selective subject/session loading for experimenting with subsets of data
 
-## Citations
+## Typical Workflow Examples
 
-If you use this code or the BOLD5000 dataset, please cite:
+### Example 1: First-time Complete Setup
 
+```bash
+# Clone the repository
+git clone https://github.com/sohamkonar/CS_375_Final_Project.git
+cd CS_375_Final_Project
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Download the complete dataset (this will take several hours)
+python download_dataset.py
+
+# Run the full experiment (this will take several days on consumer hardware)
+python main.py
 ```
-@article{chang2019bold5000,
-  title={BOLD5000, a public fMRI dataset while viewing 5000 visual images},
-  author={Chang, Nadine and Pyles, John A and Marcus, Austin and Gupta, Abhinav and Tarr, Michael J and Aminoff, Elissa M},
-  journal={Scientific data},
-  volume={6},
-  number={1},
-  pages={49},
-  year={2019},
-  publisher={Nature Publishing Group}
-}
+
+### Example 2: Quick Pilot Study
+
+```bash
+# Download a small subset of the data
+python download_dataset.py --subjects CSI1 --sessions ses01 --subset_size 200
+
+# Run a quick experiment to test your setup
+python main.py --subjects CSI1 --sessions ses01 --subset_size 200 --epochs 10 --batch_size 16
+```
+
+### Example 3: Incremental Approach
+
+```bash
+# Start with one subject
+python download_dataset.py --subjects CSI1
+
+# Train on the first subject
+python main.py --subjects CSI1 --epochs 20
+
+# Download additional subjects
+python download_dataset.py --subjects CSI2 CSI3
+
+# Train on all downloaded subjects
+python main.py --subjects CSI1 CSI2 CSI3 --epochs 30
 ```
 
 ## Troubleshooting
@@ -148,4 +292,45 @@ The full dataset will take several days to train on consumer hardware. To speed 
 1. Use a powerful GPU
 2. Start with a smaller data subset to validate your approach
 3. Increase the number of workers with `--num_workers` if you have many CPU cores
+
+### Common Errors and Solutions
+
+#### Dataset Download Errors
+
+If you encounter download interruptions:
 ```
+python download_dataset.py --resume --verify
+```
+This will resume downloading and verify existing files.
+
+#### CUDA Out of Memory
+
+If you see "CUDA out of memory" errors:
+```
+python main.py --batch_size 8 --memory_mapping
+```
+Try progressively smaller batch sizes until it works.
+
+#### Slow Training
+
+If training is too slow:
+```
+python main.py --subjects CSI1 --sessions ses01 ses02 --num_workers 8
+```
+Start with a smaller dataset and optimize data loading parameters.
+
+## Citations
+
+If you use this code or the BOLD5000 dataset, please cite:
+
+```
+@article{chang2019bold5000,
+  title={BOLD5000, a public fMRI dataset while viewing 5000 visual images},
+  author={Chang, Nadine and Pyles, John A and Marcus, Austin and Gupta, Abhinav and Tarr, Michael J and Aminoff, Elissa M},
+  journal={Scientific data},
+  volume={6},
+  number={1},
+  pages={49},
+  year={2019},
+  publisher={Nature Publishing Group}
+}
